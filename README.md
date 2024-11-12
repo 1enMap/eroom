@@ -9,6 +9,11 @@ A modern, responsive web application for managing educational assignments built 
 ## Dashboard
 
 ![Homepage Screenshot](./images/image1.png)
+
+## Assignment Review and Grading
+
+![Homepage Screenshot](./images/image3.png)
+
 ## Features
 
 - 🔐 **User Authentication**
