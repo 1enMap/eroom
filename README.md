@@ -2,9 +2,9 @@
 
 A modern, responsive web application for managing educational assignments built with React, TypeScript, and Tailwind CSS.
 
-## Live Demo
+## Login
 
-[View Live Demo](https://eroom-rupamlaha.netlify.app)
+![Homepage Screenshot](./images/image2.png)
 
 ## Features
 
