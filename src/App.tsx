@@ -1,55 +1,48 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
+import { BrowserRouter as Router } from 'react-router-dom';
+import { Toaster } from 'sonner';
+import AppRoutes from './routes';
 import { useAuthStore } from './store/authStore';
-import { useAssignmentStore } from './store/assignmentStore';
-import AuthLayout from './components/layouts/AuthLayout';
-import DashboardLayout from './components/layouts/DashboardLayout';
-import LoginPage from './pages/auth/LoginPage';
-import RegisterPage from './pages/auth/RegisterPage';
-import StudentDashboard from './pages/student/Dashboard';
-import TeacherDashboard from './pages/teacher/Dashboard';
-import AssignmentList from './pages/assignments/AssignmentList';
-import AssignmentDetails from './pages/assignments/AssignmentDetails';
-import SubmissionList from './pages/submissions/SubmissionList';
-import SubmissionDetails from './pages/submissions/SubmissionDetails';
-import UploadAssignment from './pages/assignments/UploadAssignment';
+import { useThemeStore } from './store/themeStore';
 
 function App() {
-  const { user } = useAuthStore();
-  const { initializeStore } = useAssignmentStore();
+  const { loading, loadUser } = useAuthStore();
+  const { theme } = useThemeStore();
 
   useEffect(() => {
-    initializeStore();
-  }, [initializeStore]);
+    loadUser();
+  }, [loadUser]);
+
+  useEffect(() => {
+    // Apply dark mode class to html element
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+  }, [theme]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
 
   return (
-    <BrowserRouter>
-      <Toaster position="top-right" />
-      <Routes>
-        {!user ? (
-          <Route element={<AuthLayout />}>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route path="*" element={<Navigate to="/login" replace />} />
-          </Route>
-        ) : (
-          <Route element={<DashboardLayout />}>
-            <Route path="/" element={
-              user.role === 'student' 
-                ? <StudentDashboard /> 
-                : <TeacherDashboard />
-            } />
-            <Route path="/assignments" element={<AssignmentList />} />
-            <Route path="/assignments/new" element={<UploadAssignment />} />
-            <Route path="/assignments/:id" element={<AssignmentDetails />} />
-            <Route path="/submissions" element={<SubmissionList />} />
-            <Route path="/submissions/:id" element={<SubmissionDetails />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        )}
-      </Routes>
-    </BrowserRouter>
+    <Router>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <AppRoutes />
+        <Toaster 
+          position="top-right" 
+          theme={theme}
+          toastOptions={{
+            style: {
+              background: theme === 'dark' ? '#1f2937' : '#ffffff',
+              color: theme === 'dark' ? '#ffffff' : '#000000',
+              border: theme === 'dark' ? '1px solid #374151' : '1px solid #e5e7eb',
+            },
+          }}
+        />
+      </div>
+    </Router>
   );
 }
 

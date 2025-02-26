@@ -1,160 +1,233 @@
 import { create } from 'zustand';
-import * as db from '../lib/db';
-import type { Assignment, Submission } from '../types';
+import { supabase } from '../lib/supabase';
+import { Database } from '../types/supabase';
+import { deleteFile } from '../lib/storage';
 
-interface AssignmentState {
-  assignments: Assignment[];
-  submissions: Submission[];
-  initialized: boolean;
-  createAssignment: (assignment: Omit<Assignment, 'id' | 'createdAt' | 'points'> & { points?: number }) => Promise<void>;
-  submitAssignment: (submission: Omit<Submission, 'id' | 'submittedAt' | 'status'>) => Promise<void>;
-  gradeSubmission: (submissionId: string, grade: number, feedback: string) => Promise<void>;
-  getAssignmentStatus: (assignmentId: string, studentId: string) => 'pending' | 'submitted' | 'graded' | 'late';
-  getSubmissionByAssignment: (assignmentId: string, studentId: string) => Submission | undefined;
-  getAllAssignments: () => Assignment[];
-  getStudentSubmissions: (studentId: string) => Submission[];
-  getAllSubmissions: () => Submission[];
-  hasSubmitted: (assignmentId: string, studentId: string) => boolean;
-  initializeStore: () => Promise<void>;
-  getStudentStats: (studentId: string) => {
-    totalAssignments: number;
-    completedAssignments: number;
-    totalPoints: number;
-    averageGrade: number;
-    submissionStreak: number;
+type Assignment = Database['public']['Tables']['assignments']['Row'];
+type ArchivedAssignment = Assignment & {
+  archived_at: string;
+  archived_by: string;
+};
+
+interface Submission {
+  id: string;
+  created_at: string;
+  assignment_id: string;
+  student_id: string;
+  content: string;
+  file_url: string | null;
+  grade: number | null;
+  feedback: string | null;
+  assignment: Assignment;
+  student: {
+    id: string;
+    full_name: string;
   };
 }
 
-export const useAssignmentStore = create<AssignmentState>()((set, get) => ({
+interface AssignmentState {
+  assignments: Assignment[];
+  archivedAssignments: ArchivedAssignment[];
+  submissions: Submission[];
+  loading: boolean;
+  error: Error | null;
+  createAssignment: (data: Omit<Assignment, 'id' | 'created_at'>) => Promise<void>;
+  deleteAssignment: (id: string) => Promise<void>;
+  deleteArchivedAssignment: (id: string) => Promise<void>;
+  deleteAllArchivedAssignments: () => Promise<void>;
+  fetchAssignments: () => Promise<void>;
+  fetchArchivedAssignments: () => Promise<void>;
+  fetchSubmissions: () => Promise<void>;
+  restoreAssignment: (id: string) => Promise<void>;
+}
+
+export const useAssignmentStore = create<AssignmentState>((set, get) => ({
   assignments: [],
+  archivedAssignments: [],
   submissions: [],
-  initialized: false,
+  loading: false,
+  error: null,
 
-  initializeStore: async () => {
-    if (get().initialized) return;
+  createAssignment: async (data) => {
+    try {
+      set({ loading: true, error: null });
+      const { data: newAssignment, error } = await supabase
+        .from('assignments')
+        .insert([data])
+        .select()
+        .single();
 
-    const [assignments, submissions] = await Promise.all([
-      db.getAllAssignments(),
-      db.getAllSubmissions(),
-    ]);
+      if (error) throw error;
 
-    set({ assignments, submissions, initialized: true });
-  },
-
-  createAssignment: async (assignment) => {
-    const newAssignment = await db.createAssignment({
-      ...assignment,
-      points: assignment.points || 100,
-    });
-
-    set(state => ({
-      assignments: [...state.assignments, newAssignment],
-    }));
-  },
-
-  submitAssignment: async (submission) => {
-    const exists = await db.getSubmissionByAssignmentAndStudent(
-      submission.assignmentId,
-      submission.studentId
-    );
-
-    if (exists) return;
-
-    const newSubmission = await db.createSubmission(submission);
-    set(state => ({
-      submissions: [...state.submissions, newSubmission],
-    }));
-  },
-
-  hasSubmitted: (assignmentId: string, studentId: string) => {
-    return get().submissions.some(
-      s => s.assignmentId === assignmentId && s.studentId === studentId
-    );
-  },
-
-  gradeSubmission: async (submissionId: string, grade: number, feedback: string) => {
-    const updatedSubmission = await db.updateSubmission(submissionId, {
-      grade,
-      feedback,
-      status: 'graded',
-    });
-
-    set(state => ({
-      submissions: state.submissions.map(s =>
-        s.id === submissionId ? updatedSubmission : s
-      ),
-    }));
-  },
-
-  getAllAssignments: () => {
-    return [...get().assignments].sort((a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-  },
-
-  getStudentSubmissions: (studentId: string) => {
-    return get().submissions.filter(s => s.studentId === studentId);
-  },
-
-  getAllSubmissions: () => {
-    return get().submissions;
-  },
-
-  getAssignmentStatus: (assignmentId: string, studentId: string) => {
-    const submission = get().submissions.find(
-      s => s.assignmentId === assignmentId && s.studentId === studentId
-    );
-    const assignment = get().assignments.find(a => a.id === assignmentId);
-
-    if (!assignment) return 'pending';
-    
-    const deadline = new Date(assignment.deadline);
-    const now = new Date();
-
-    if (!submission && deadline < now) return 'late';
-    if (!submission) return 'pending';
-    return submission.status;
-  },
-
-  getSubmissionByAssignment: (assignmentId: string, studentId: string) => {
-    return get().submissions.find(
-      s => s.assignmentId === assignmentId && s.studentId === studentId
-    );
-  },
-
-  getStudentStats: (studentId: string) => {
-    const studentSubmissions = get().submissions.filter(s => s.studentId === studentId);
-    const gradedSubmissions = studentSubmissions.filter(s => s.status === 'graded');
-
-    const totalPoints = gradedSubmissions.reduce(
-      (sum, s) => sum + (s.grade || 0),
-      0
-    );
-
-    const sortedSubmissions = [...studentSubmissions].sort(
-      (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
-    );
-
-    let streak = 0;
-    if (sortedSubmissions.length > 0) {
-      streak = 1;
-      for (let i = 1; i < sortedSubmissions.length; i++) {
-        const curr = new Date(sortedSubmissions[i].submittedAt);
-        const prev = new Date(sortedSubmissions[i - 1].submittedAt);
-        const diffDays = Math.floor((prev.getTime() - curr.getTime()) / (1000 * 60 * 60 * 24));
-        if (diffDays <= 1) streak++;
-        else break;
-      }
+      set((state) => ({
+        assignments: [newAssignment, ...state.assignments],
+        error: null
+      }));
+    } catch (error) {
+      set({ error: error as Error });
+      throw error;
+    } finally {
+      set({ loading: false });
     }
-
-    return {
-      totalAssignments: get().assignments.length,
-      completedAssignments: studentSubmissions.length,
-      totalPoints,
-      averageGrade: gradedSubmissions.length > 0 
-        ? totalPoints / gradedSubmissions.length 
-        : 0,
-      submissionStreak: streak,
-    };
   },
+
+  deleteAssignment: async (id) => {
+    try {
+      set({ loading: true, error: null });
+      
+      // Get the assignment to check if it has a file
+      const assignment = get().assignments.find(a => a.id === id);
+      
+      // Delete from database first
+      const { error } = await supabase
+        .rpc('delete_assignment', { assignment_id: id });
+
+      if (error) throw error;
+
+      // If assignment had a file, delete it from storage
+      if (assignment?.file_url) {
+        const filePath = new URL(assignment.file_url).pathname.split('/').pop();
+        if (filePath) {
+          await deleteFile(filePath, 'assignments');
+        }
+      }
+
+      // Update local state
+      set((state) => ({
+        assignments: state.assignments.filter((a) => a.id !== id),
+        error: null
+      }));
+
+      // Refresh archived assignments
+      await get().fetchArchivedAssignments();
+    } catch (error) {
+      set({ error: error as Error });
+      throw error;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  deleteArchivedAssignment: async (id) => {
+    try {
+      set({ loading: true, error: null });
+      
+      const { error } = await supabase
+        .rpc('delete_archived_assignment', { assignment_id: id });
+
+      if (error) throw error;
+
+      set((state) => ({
+        archivedAssignments: state.archivedAssignments.filter((a) => a.id !== id),
+        error: null
+      }));
+    } catch (error) {
+      set({ error: error as Error });
+      throw error;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  deleteAllArchivedAssignments: async () => {
+    try {
+      set({ loading: true, error: null });
+      
+      const { error } = await supabase
+        .rpc('delete_all_archived_assignments');
+
+      if (error) throw error;
+
+      set((state) => ({
+        archivedAssignments: [],
+        error: null
+      }));
+    } catch (error) {
+      set({ error: error as Error });
+      throw error;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  fetchAssignments: async () => {
+    try {
+      set({ loading: true, error: null });
+      
+      const { data, error } = await supabase
+        .from('assignments')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      set({ assignments: data || [], error: null });
+    } catch (error) {
+      set({ error: error as Error });
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  fetchArchivedAssignments: async () => {
+    try {
+      set({ loading: true, error: null });
+      
+      const { data, error } = await supabase
+        .from('archived_assignments')
+        .select('*')
+        .order('archived_at', { ascending: false });
+
+      if (error) throw error;
+
+      set({ archivedAssignments: data || [], error: null });
+    } catch (error) {
+      set({ error: error as Error });
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  fetchSubmissions: async () => {
+    try {
+      set({ loading: true, error: null });
+      
+      const { data, error } = await supabase
+        .from('submissions')
+        .select(`
+          *,
+          assignment:assignments(*),
+          student:profiles(id, full_name)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      set({ submissions: data || [], error: null });
+    } catch (error) {
+      set({ error: error as Error });
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  restoreAssignment: async (id) => {
+    try {
+      set({ loading: true, error: null });
+      
+      const { error } = await supabase
+        .rpc('restore_assignment', { assignment_id: id });
+
+      if (error) throw error;
+
+      // Refresh both lists
+      await get().fetchAssignments();
+      await get().fetchArchivedAssignments();
+    } catch (error) {
+      set({ error: error as Error });
+      throw error;
+    } finally {
+      set({ loading: false });
+    }
+  }
 }));
