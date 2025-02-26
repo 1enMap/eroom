@@ -2,9 +2,17 @@
 
 A modern, responsive web application for managing educational assignments built with React, TypeScript, and Tailwind CSS.
 
-## Live Demo
+## Login
 
-[View Live Demo](https://eroom-rupamlaha.netlify.app)
+![Homepage Screenshot](./images/image2.png)
+
+## Dashboard
+
+![Homepage Screenshot](./images/image1.png)
+
+## Assignment Review and Grading
+
+![Homepage Screenshot](./images/image3.png)
 
 ## Features
 
@@ -50,7 +58,7 @@ A modern, responsive web application for managing educational assignments built 
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/RUPAMLAHA-code/eroom.git
+   git clone https://github.com/1enMap/eroom.git
    cd eroom
    ```
 
@@ -93,7 +101,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Author
 
 **Rupam Laha**
-- GitHub: [@RUPAMLAHA-code](https://github.com/RUPAMLAHA-code)
+- GitHub: [@1enMap](https://github.com/1enMap)
 
 ## Acknowledgments
 
